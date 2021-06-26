@@ -1,5 +1,11 @@
 # surf-kostas
 
+# Table of contents
+===================
+* [surf-kostas](#surf-kostas)
+* [My custom Surf browser build](#My-custom-Surf-browser-build)
+* [Patches that I have applied](#Patches-that-I-have-applied)
+
 # My custom Surf browser build
 My custom build of suckless surf browser. This is a part of me trying some suckless software.
 
