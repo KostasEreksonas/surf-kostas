@@ -221,6 +221,7 @@ static void destroywin(GtkWidget* w, Client *c);
 static void pasteuri(GtkClipboard *clipboard, const char *text, gpointer d);
 static void reload(Client *c, const Arg *a);
 static void print(Client *c, const Arg *a);
+static void download(WebKitDownload *o, GParamSpec *pspec, Client *c);
 static void showcert(Client *c, const Arg *a);
 static void clipboard(Client *c, const Arg *a);
 static void zoom(Client *c, const Arg *a);
@@ -1219,6 +1220,115 @@ newview(Client *c, WebKitWebView *rv)
 }
 
 static gboolean
+initdownload(WebKitWebView *view, WebKitDownload *o, Client *c) {
+	gchar *uri, *path;
+	const gchar *filename;
+	Client *n;
+	const char template[] =
+	"<html>" \
+	"<head>" \
+	"<title>Download - %s</title>" \
+	"<script>" \
+	"function formText(x){" \
+	"  if(x >= 1073741824)  { return (Math.floor(x/10737418.24)/100) + \"G\"; }" \
+	"  else if(x >= 1048576){ return (Math.floor(x/10485.76)/100) + \"M\"; }" \
+	"  else if(x >= 1024)   { return (Math.floor(x/10.24)/100) + \"k\"; }" \
+	"  else                 { return x+\"b\"; }" \
+	"}" \
+	"function updateText(c,t){" \
+	"  txt= formText(c) + \"/\" + formText(t);" \
+	"  DLTEXT.textContent= txt;" \
+	"  /* center text in bar */" \
+	"  DLTEXT.setAttribute('x', 102-4.4*txt.length)" \
+	"}" \
+	"function c(c, t){" \
+	"  DLGRAD.setAttribute('x2', 230);" \
+	"  DLGRAD.setAttribute('x1', 205);" \
+	"  updateText(c,t);" \
+	"  document.getElementById('stop1').setAttribute('style', \"stop-color:#2020ff;\");" \
+	"}" \
+	"function u(c,t,p){" \
+	"  DLGRAD.setAttribute('x2', Math.floor(p*205/100) + 25);" \
+	"  DLGRAD.setAttribute('x1', Math.floor(p*205/100));" \
+	"  updateText(c,t);" \
+	"}" \
+	"</script>" \
+	"</head>" \
+	"<body>" \
+	"<center>" \
+	"<h2>Downloading</h2>" \
+	"<h3>%s</h3>" \
+	"to %s<br/>" \
+	"<svg" \
+	"   xmlns:cc=\"http://creativecommons.org/ns#\"" \
+	"   xmlns:svg=\"http://www.w3.org/2000/svg\"" \
+	"   xmlns=\"http://www.w3.org/2000/svg\"" \
+	"   xmlns:svg=\"http://www.w3.org/2000/svg\"" \
+	"   xmlns=\"http://www.w3.org/2000/svg\"" \
+	"   xmlns:xlink=\"http://www.w3.org/1999/xlink\"" \
+	"   width=\"210\"" \
+	"   height=\"60\"" \
+	"   id=\"download\">" \
+	"  <defs>" \
+	"    <linearGradient" \
+	"       id=\"dlgradient\"" \
+	"       x1=\"0\"" \
+	"       y1=\"0\"" \
+	"       x2=\"25\"" \
+	"       y2=\"0\"" \
+	"       gradientUnits=\"userSpaceOnUse\">" \
+	"      <stop style=\"stop-color:#00ff00;\" offset=\"0\" id=\"stop1\" />" \
+	"      <stop style=\"stop-color:#00ff00;stop-opacity:0;\" offset=\"1\" id=\"stop2\" />" \
+	"    </linearGradient>" \
+	"  </defs>" \
+	"    <rect" \
+	"       style=\"fill:url(#dlgradient);stroke:#000000;stroke-width:3\"" \
+	"       id=\"rect2985\"" \
+	"       width=\"200\"" \
+	"       height=\"50\"" \
+	"       x=\"5\"" \
+	"       y=\"5\"" \
+	"       ry=\"25\" />" \
+	"    <text id=\"dltext\" x=\"92\" y=\"35\">0/0</text>" \
+	"</svg>" \
+	"</center>" \
+	"<script>" \
+	"DLGRAD= document.getElementById('dlgradient');" \
+	"DLTEXT= document.getElementById('dltext');" \
+	"</script>" \
+	"</body>" \
+	"</html>";
+	char html[sizeof(template)+2048];
+	filename = webkit_download_get_suggested_filename(o);
+
+	path = g_build_filename(downdir, filename, NULL);
+	uri = g_filename_to_uri(path, NULL, NULL);
+
+	webkit_download_set_destination_uri(o, uri);
+	webkit_download_start(o);
+
+	n = newclient();
+	snprintf(html, sizeof(template)+2048, template, filename, filename, path);
+	webkit_web_view_load_string(n->view, html, NULL, NULL, NULL);
+
+	g_signal_connect(o, "notify::progress", G_CALLBACK(download), n);
+	g_signal_connect(o, "notify::status", G_CALLBACK(download), n);
+
+	n->title = g_strdup_printf("Downloading %s", filename);
+	n->progress = 0;
+	update(n);
+
+	g_free(path);
+	g_free(uri);
+
+	updatewinid(c);
+	arg = (Arg)DOWNLOAD((char *)webkit_download_get_uri(o), geturi(c));
+	spawn(c, &arg);
+	return FALSE;
+	return TRUE;
+}
+
+static gboolean
 readsock(GIOChannel *s, GIOCondition ioc, gpointer unused)
 {
 	static char msg[MSGBUFSZ];
@@ -1850,6 +1960,50 @@ zoom(Client *c, const Arg *a)
 		webkit_web_view_set_zoom_level(c->view, 1.0);
 
 	curconfig[ZoomLevel].val.f = webkit_web_view_get_zoom_level(c->view);
+}
+
+struct client_size_tuple {
+	Client* c;
+	gint s;
+};
+
+static void
+late_download_update(WebKitWebView* view, GParamSpec *pspec, struct client_size_tuple* t){
+	char script[1024]; char* s= script;
+	snprintf(script, 1024, "c(%d, %d)", t->s, t->s);
+	const Arg a= {.v = (void*) &s};
+	eval(t->c, &a);
+	free(t);
+}
+
+static void
+download(WebKitDownload *o, GParamSpec *pspec, Client *c) {
+	WebKitDownloadStatus status;
+	char script[2048]; char* s= script;
+
+	status = webkit_download_get_status(o);
+	if(status == WEBKIT_DOWNLOAD_STATUS_STARTED || status == WEBKIT_DOWNLOAD_STATUS_CREATED) {
+		snprintf(script, 2048, "u(%d, %d, %d)",
+			(gint)webkit_download_get_current_size(o),
+			(gint)webkit_download_get_total_size(o),
+			(gint)(webkit_download_get_progress(o) * 100));
+		const Arg a= {.v = (void*) &s};
+		eval(c, &a);
+	}
+	else if (status == WEBKIT_DOWNLOAD_STATUS_FINISHED){
+		if( webkit_web_view_get_load_status(c->view) == WEBKIT_LOAD_FINISHED ){
+			snprintf(script, 2048, "c(%d, %d)",
+				(gint)webkit_download_get_current_size(o),
+				(gint)webkit_download_get_total_size(o));
+			const Arg a= {.v = (void*) &s};
+			eval(c, &a);
+		}
+		else {
+			struct client_size_tuple* t= calloc(1, sizeof(struct client_size_tuple));
+			t->c= c; t->s= (gint)webkit_download_get_current_size(o);
+			g_signal_connect(c->view, "document-load-finished", G_CALLBACK(late_download_update), t);
+		}
+	}
 }
 
 static void
