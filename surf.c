@@ -1321,10 +1321,6 @@ initdownload(WebKitWebView *view, WebKitDownload *o, Client *c) {
 	g_free(path);
 	g_free(uri);
 
-	updatewinid(c);
-	arg = (Arg)DOWNLOAD((char *)webkit_download_get_uri(o), geturi(c));
-	spawn(c, &arg);
-	return FALSE;
 	return TRUE;
 }
 
