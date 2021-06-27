@@ -15,3 +15,25 @@ In this section I will list patches that I have applied to my custom ***Surf*** 
 
 * [Bookmarks](../main/patches/surf-bookmarks-20170722-723ff26.diff) - a patch for adding bookmarks with ***Ctrl + m*** keybind.
 * [Homepage](../main/patches/surf-2.0-homepage.diff) - a patch for setting a homepage within Surf web browser.
+
+# Install guide
+
+In this section I will provide instructions for installing my custom `surf` browser build.
+
+1. Clone this git repository:
+
+`git clone https://github.com/KostasEreksonas/surf-kostas.git`
+
+2. Go to the folder of the cloned repository:
+
+`cd surf-kostas`
+
+3. Build the package:
+
+`make`
+
+4. Compile this custom `surf` build ***with root privilleges***:
+
+`sudo make clean install`
+
+5. Done!
