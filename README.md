@@ -1,5 +1,7 @@
 # surf-kostas
 
+***Newpatch*** branch is used for applying new patches to `surf` before merging them to the main branch. It's primary used as a fail-safe in case of errors.
+
 # Table of contents
 ===================
 * [surf-kostas](#surf-kostas)
